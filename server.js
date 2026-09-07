@@ -1,70 +1,252 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
+// FireeVolution 2.8 — backend/server.js
+//
+// Arquitetura:
+//   Extensão FireeVolution -> Backend (este arquivo) -> IA (OpenAI) -> Backend -> Extensão
+//
+// A chave de IA (OPENAI_API_KEY) SÓ existe aqui, lida de variável de
+// ambiente. Ela nunca é enviada para a extensão nem exposta no navegador.
+
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "*").split(",").map((s) => s.trim());
+app.use(
+  cors({
+    origin: ALLOWED_ORIGINS.includes("*") ? true : ALLOWED_ORIGINS,
+  })
+);
 
-// Rota raiz
-app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'fireevolution-backend', model: 'gpt-4o-mini' });
+app.use(express.json({ limit: "8mb" }));
+
+// Se o corpo da requisição for grande demais, devolve uma mensagem clara em
+// JSON em vez do erro cru (o Express, por padrão, responderia com HTML).
+// Fica DEPOIS do cors() para que a resposta de erro também tenha os
+// cabeçalhos de CORS — senão o navegador bloqueia a leitura da resposta.
+app.use((err, _req, res, next) => {
+  if (err && err.type === "entity.too.large") {
+    return res.status(413).json({
+      error:
+        "O vídeo/frames enviados são grandes demais para o backend. Tente novamente — a extensão já reduz automaticamente o tamanho.",
+    });
+  }
+  next(err);
 });
 
-// Rota de Health Check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const MODEL = process.env.FIREEVOLUTION_MODEL || "gpt-4o";
+const PORT = process.env.PORT || 3000;
+
+if (!OPENAI_API_KEY) {
+  console.warn(
+    "\n⚠️  OPENAI_API_KEY não encontrada. Copie backend/.env.example para backend/.env e preencha a chave.\n"
+  );
+}
+
+const SYSTEM_PROMPT = `
+Você é a FireeVolution, uma IA especialista em analisar vídeos de redes sociais
+(YouTube, TikTok, Instagram) e explicar por que eles viralizam ou não.
+
+Sempre analise considerando: Hook, Retenção, Ritmo, Edição, Curiosidade,
+Entretenimento, Clareza, CTA, Formato para redes sociais e Potencial de
+compartilhamento.
+
+Seja direto, prático e didático. Nunca invente detalhes específicos do vídeo
+que você não conseguiu observar nas imagens fornecidas — nesses casos, fale
+em termos gerais e deixe claro que é uma estimativa.
+`.trim();
+
+// ---------- util: chamada à API da OpenAI ----------
+
+async function callOpenAI(messages, { maxTokens = 1800, jsonMode = false } = {}) {
+  const body = {
+    model: MODEL,
+    max_tokens: maxTokens,
+    messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+  };
+
+  if (jsonMode) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Erro da API de IA (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+function stripJsonFences(text) {
+  return text
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/, "")
+    .replace(/```$/, "")
+    .trim();
+}
+
+function dataUrlToImageBlock(dataUrl) {
+  if (!/^data:image\/\w+;base64,/.test(dataUrl || "")) return null;
+  return {
+    type: "image_url",
+    image_url: { url: dataUrl },
+  };
+}
+
+// ---------- rotas ----------
+
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "fireevolution-backend",
+    message: "FireeVolution backend está no ar. Use /health, /analyze ou /chat.",
+  });
 });
 
-// Rota principal da API
-app.post('/api/chat', async (req, res) => {
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "fireevolution-backend", model: MODEL });
+});
+
+// Análise inicial de um vídeo (a partir de frames capturados no navegador)
+app.post("/analyze", async (req, res) => {
   try {
-    const { message, prompt } = req.body;
-    const userContent = message || prompt;
-
-    if (!userContent) {
-      return res.status(400).json({ error: 'Nenhuma mensagem enviada.' });
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ error: "Backend sem OPENAI_API_KEY configurada." });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'Chave OPENAI_API_KEY não configurada no servidor.' });
+    const { site, videoMeta, frames, frameLabels } = req.body || {};
+
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return res.status(400).json({ error: "Nenhum frame de vídeo foi enviado." });
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Você é um assistente útil e preciso.' },
-          { role: 'user', content: userContent }
-        ]
-      })
+    const imageBlocks = [];
+    frames.forEach((dataUrl, i) => {
+      const block = dataUrlToImageBlock(dataUrl);
+      if (block) {
+        imageBlocks.push({ type: "text", text: `Momento: ${frameLabels?.[i] || i + 1}` });
+        imageBlocks.push(block);
+      }
     });
 
-    const data = await response.json();
+    const instructions = `
+Analise este vídeo de ${site || "uma rede social"} a partir dos frames abaixo
+(título/arquivo: "${videoMeta?.title || "desconhecido"}", duração aproximada:
+${videoMeta?.duration ? Math.round(videoMeta.duration) + "s" : "desconhecida"}).
 
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Erro na API da OpenAI' });
+Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no seguinte formato:
+
+{
+  "notaGeral": <número de 0 a 100>,
+  "subscores": {
+    "hook": <0-10>,
+    "retencao": <0-10>,
+    "ritmo": <0-10>,
+    "edicao": <0-10>,
+    "cta": <0-10>
+  },
+  "diagnostico": "<explicação simples de por que o vídeo viralizou ou não>",
+  "comoReproduzir": "<sugestões práticas para o usuário criar vídeos parecidos, sem copiar o conteúdo original>",
+  "titulos": ["<sugestão 1>", "<sugestão 2>", "<sugestão 3>"],
+  "thumbnail": "<ideia de thumbnail baseada no conteúdo>",
+  "momentosImportantes": [{"momento": "<ex: 0-3s>", "motivo": "<por que é importante>"}],
+  "pontosFracos": [{"problema": "<parte que pode perder o espectador>", "comoMelhorar": "<sugestão>"}]
+}
+    `.trim();
+
+    const userContent = [{ type: "text", text: instructions }, ...imageBlocks];
+
+    const rawReply = await callOpenAI([{ role: "user", content: userContent }], {
+      maxTokens: 2000,
+      jsonMode: true,
+    });
+
+    let analysis;
+    try {
+      analysis = JSON.parse(stripJsonFences(rawReply));
+    } catch (parseErr) {
+      return res.status(502).json({
+        error: "A IA respondeu em um formato inesperado. Tente analisar novamente.",
+      });
     }
 
-    const aiMessage = data.choices[0].message.content;
-    return res.json({ response: aiMessage, reply: aiMessage });
+    // Histórico inicial do chat contínuo, para as próximas perguntas do usuário.
+    const history = [
+      { role: "user", content: instructions + " [imagens do vídeo enviadas]" },
+      { role: "assistant", content: rawReply },
+    ];
 
-  } catch (error) {
-    console.error('Erro no servidor:', error);
-    return res.status(500).json({ error: 'Erro interno do servidor.' });
+    res.json({ analysis, history });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "Erro interno ao analisar o vídeo." });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+// Continuação do chat, usando a análise já feita como contexto
+app.post("/chat", async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ error: "Backend sem OPENAI_API_KEY configurada." });
+    }
+
+    const { message, analysis, videoMeta, history } = req.body || {};
+
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Mensagem vazia." });
+    }
+
+    const contextNote = analysis
+      ? `Contexto: você já analisou o vídeo "${videoMeta?.title || "sem título"}" e chegou a este resultado em JSON: ${JSON.stringify(
+          analysis
+        )}. Use esse contexto para responder à pergunta do usuário sobre esse vídeo, de forma direta e específica.`
+      : `O usuário ainda não enviou nenhum vídeo para análise. Se a pergunta depender de um vídeo específico, peça para ele detectar ou enviar um vídeo primeiro.`;
+
+    const priorHistory = Array.isArray(history) ? history.slice(-10) : [];
+
+    const messages = [
+      { role: "user", content: contextNote },
+      { role: "assistant", content: "Entendido, estou pronta para responder sobre esse vídeo." },
+      ...priorHistory.map((h) => ({ role: h.role, content: h.content })),
+      { role: "user", content: message },
+    ];
+
+    const reply = await callOpenAI(messages, { maxTokens: 800 });
+
+    const newHistory = [
+      ...priorHistory,
+      { role: "user", content: message },
+      { role: "assistant", content: reply },
+    ].slice(-20);
+
+    res.json({ reply, history: newHistory });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "Erro interno no chat." });
+  }
 });
 
+// Qualquer rota não reconhecida cai aqui, com uma mensagem clara em JSON
+// (em vez do "Cannot GET /xxx" padrão do Express, que é texto puro).
+app.use((req, res) => {
+  res.status(404).json({
+    error: `Rota não encontrada: ${req.method} ${req.originalUrl}. Rotas disponíveis: /health, /analyze, /chat.`,
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🔥 FireeVolution backend rodando em http://localhost:${PORT}`);
+});
