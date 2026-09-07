@@ -6,11 +6,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rota de teste
+// Rota raiz
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'fireevolution-backend', model: 'gpt-4o-mini' });
 });
 
+// Rota de Health Check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Rota principal da API
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, prompt } = req.body;
