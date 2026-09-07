@@ -1,10 +1,4 @@
-// FireeVolution 2.5 — backend/server.js
-//
-// Arquitetura:
-//   Extensão FireeVolution -> Backend (este arquivo) -> IA -> Backend -> Extensão
-//
-// A chave de IA (ANTHROPIC_API_KEY) SÓ existe aqui, lida de variável de
-// ambiente. Ela nunca é enviada para a extensão nem exposta no navegador.
+// FireEEvolution 2.5 — backend/server.js
 
 require("dotenv").config();
 const express = require("express");
@@ -13,12 +7,7 @@ const cors = require("cors");
 const app = express();
 app.use(express.json({ limit: "30mb" }));
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "*").split(",").map((s) => s.trim());
-app.use(
-  cors({
-    origin: ALLOWED_ORIGINS.includes("*") ? true : ALLOWED_ORIGINS,
-  })
-);
+app.use(cors());
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.FIREEVOLUTION_MODEL || "claude-sonnet-5";
@@ -31,19 +20,14 @@ if (!ANTHROPIC_API_KEY) {
 }
 
 const SYSTEM_PROMPT = `
-Você é a FireeVolution, uma IA especialista em analisar vídeos de redes sociais
-(YouTube, TikTok, Instagram) e explicar por que eles viralizam ou não.
+Você é a FireEEvolution, uma IA especialista em analisar vídeos de redes sociais (YouTube, TikTok, Instagram) e explicar por que eles viralizam ou não.
 
-Sempre analise considerando: Hook, Retenção, Ritmo, Edição, Curiosidade,
-Entretenimento, Clareza, CTA, Formato para redes sociais e Potencial de
-compartilhamento.
+Sempre analise considerando: Hook, Retenção, Ritmo, Edição, Curiosidade, Clareza, CTA, Formato para redes sociais e Potencial de compartilhamento.
 
-Seja direto, prático e didático. Nunca invente detalhes específicos do vídeo
-que você não conseguiu observar nas imagens fornecidas — nesses casos, fale
-em termos gerais e deixe claro que é uma estimativa.
+Seja direto, prático e didático. Nunca invente detalhes específicos do vídeo que você não conseguiu observar nas imagens fornecidas — nesses casos, fale em termos gerais e deixe claro que é uma estimativa.
 `.trim();
 
-// ---------- util: chamada à API da Anthropic ----------
+// -------- util: chamada à API da Anthropic --------
 
 async function callAnthropic(messages, { maxTokens = 1800 } = {}) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -93,7 +77,7 @@ function dataUrlToImageBlock(dataUrl) {
   };
 }
 
-// ---------- rotas ----------
+// -------- rotas --------
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "fireevolution-backend", model: MODEL });
@@ -123,11 +107,9 @@ app.post("/analyze", async (req, res) => {
 
     const instructions = `
 Analise este vídeo de ${site || "uma rede social"} a partir dos frames abaixo
-(título/arquivo: "${videoMeta?.title || "desconhecido"}", duração aproximada:
-${videoMeta?.duration ? Math.round(videoMeta.duration) + "s" : "desconhecida"}).
+(título/arquivo: "${videoMeta?.title || "desconhecido"}", duração aproximada: ${videoMeta?.duration ? Math.round(videoMeta.duration) + "s" : "desconhecida"}).
 
 Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no seguinte formato:
-
 {
   "notaGeral": <número de 0 a 100>,
   "subscores": {
@@ -141,10 +123,10 @@ Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no s
   "comoReproduzir": "<sugestões práticas para o usuário criar vídeos parecidos, sem copiar o conteúdo original>",
   "titulos": ["<sugestão 1>", "<sugestão 2>", "<sugestão 3>"],
   "thumbnail": "<ideia de thumbnail baseada no conteúdo>",
-  "momentosImportantes": [{"momento": "<ex: 0-3s>", "motivo": "<por que é importante>"}],
+  "pontosImportantes": [{"momento": "<ex: 0-3s>", "motivo": "<por que é importante>"}],
   "pontosFracos": [{"problema": "<parte que pode perder o espectador>", "comoMelhorar": "<sugestão>"}]
 }
-    `.trim();
+`.trim();
 
     const userContent = [{ type: "text", text: instructions }, ...imageBlocks];
 
@@ -155,7 +137,7 @@ Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no s
     let analysis;
     try {
       analysis = JSON.parse(stripJsonFences(rawReply));
-    } catch (parseErr) {
+    } catch (err) {
       return res.status(502).json({
         error: "A IA respondeu em um formato inesperado. Tente analisar novamente.",
       });
@@ -163,7 +145,7 @@ Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no s
 
     // Histórico inicial do chat contínuo, para as próximas perguntas do usuário.
     const history = [
-      { role: "user", content: instructions + " [imagens do vídeo enviadas]" },
+      { role: "user", content: instructions + " [Imagens do vídeo enviadas]" },
       { role: "assistant", content: rawReply },
     ];
 
@@ -183,15 +165,15 @@ app.post("/chat", async (req, res) => {
 
     const { message, analysis, videoMeta, history } = req.body || {};
 
-    if (!message || typeof message !== "string") {
+    if (typeof message !== "string") {
       return res.status(400).json({ error: "Mensagem vazia." });
     }
 
-    const contextNote = analysis
-      ? `Contexto: você já analisou o vídeo "${videoMeta?.title || "sem título"}" e chegou a este resultado em JSON: ${JSON.stringify(
-          analysis
-        )}. Use esse contexto para responder à pergunta do usuário sobre esse vídeo, de forma direta e específica.`
-      : `O usuário ainda não enviou nenhum vídeo para análise. Se a pergunta depender de um vídeo específico, peça para ele detectar ou enviar um vídeo primeiro.`;
+    const contextNote = `
+Contexto: você já analisou o vídeo "${videoMeta?.title || "sem título"}" e chegou a este resultado em JSON: ${JSON.stringify(
+      analysis
+    )}. Use esse contexto para responder à pergunta do usuário sobre esse vídeo, de forma direta e específica.
+`.trim();
 
     const priorHistory = Array.isArray(history) ? history.slice(-10) : [];
 
@@ -218,5 +200,6 @@ app.post("/chat", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🔥 FireeVolution backend rodando em http://localhost:${PORT}`);
+  console.log(`Server rodando na porta ${PORT}`);
 });
+      
