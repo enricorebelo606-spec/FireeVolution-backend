@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FireeVolution",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "description": "Analista de vídeos com IA: descubra por que vídeos viralizam no YouTube, TikTok e Instagram, e como reproduzir o resultado.",
   "icons": {
     "16": "icons/icon16.png",

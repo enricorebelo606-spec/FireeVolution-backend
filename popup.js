@@ -1,4 +1,4 @@
-// FireeVolution 2.8 — popup.js
+// FireeVolution 2.9 — popup.js
 // Apenas configura a URL do backend. Nenhuma chave de API é armazenada
 // ou usada aqui — a IA fica inteiramente do lado do backend.
 

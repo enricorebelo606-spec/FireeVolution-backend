@@ -1,4 +1,4 @@
-# 🔥 FireeVolution 2.8
+# 🔥 FireeVolution 2.9
 
 Analista de vídeos com IA para **YouTube, TikTok e Instagram**. A FireeVolution
 mostra uma bolinha flutuante 🔥 nesses sites; ao clicar nela, abre um chat que
@@ -10,7 +10,7 @@ A FireeVolution é um produto independente. **Não depende do ChatGPT** e não �
 uma extensão do ChatGPT.
 
 ```
-FireeVolution-2.8/
+FireeVolution-2.9/
 │
 ├── extension/          → a extensão Chrome (Manifest V3)
 │   ├── manifest.json
@@ -35,7 +35,7 @@ Extensão FireeVolution → Backend → IA → Backend → FireeVolution
 ```
 
 A chave da API de IA **nunca** fica na extensão. Ela vive só no backend, lida
-de uma variável de ambiente (`OPENAI_API_KEY`). A extensão só sabe o
+de uma variável de ambiente (`GROQ_API_KEY`). A extensão só sabe o
 endereço do backend (configurável no popup, padrão `http://localhost:3000`).
 
 A extensão só pede a permissão `storage` (para lembrar a posição da bolinha e
@@ -47,7 +47,7 @@ site, inclusive o próprio ChatGPT ou o Google.
 ```bash
 cd backend
 cp .env.example .env
-# edite o .env e coloque sua OPENAI_API_KEY
+# edite o .env e coloque sua GROQ_API_KEY
 npm install
 npm start
 ```
@@ -59,8 +59,14 @@ no `.env`). Ele expõe três rotas:
 - `POST /analyze` — recebe os frames do vídeo e devolve a análise estruturada.
 - `POST /chat` — continuação da conversa usando a análise como contexto.
 
-> O modelo padrão é `gpt-4o` (variável `FIREEVOLUTION_MODEL`). Troque
-> se quiser usar outro modelo com suporte a imagens.
+> O modelo padrão é `qwen/qwen3.6-27b` (variável `FIREEVOLUTION_MODEL`), o
+> modelo de visão atual do Groq. Troque se quiser usar outro modelo com
+> suporte a imagens — confira a lista atual em
+> https://console.groq.com/docs/vision, já que o catálogo de modelos do
+> Groq muda com frequência.
+>
+> Use uma chave da Groq (começa com `gsk_...`), não uma chave da OpenAI ou
+> da Hugging Face.
 
 Se você for hospedar o backend em outro domínio (não `localhost`), adicione
 esse domínio em `extension/manifest.json`, dentro de `host_permissions`, e
@@ -72,7 +78,7 @@ recarregue a extensão.
 2. Ative o **Modo do desenvolvedor** (canto superior direito)
 3. Clique em **Carregar sem compactação**
 4. Selecione a pasta `extension/` (não o `.zip` inteiro — se você extraiu o
-   zip, aponte para a subpasta `FireeVolution-2.8/extension`)
+   zip, aponte para a subpasta `FireeVolution-2.9/extension`)
 5. Clique no ícone 🔥 da extensão na barra do Chrome e confirme/edite a URL
    do backend (padrão `http://localhost:3000`)
 6. Abra o YouTube, o TikTok ou o Instagram — a bolinha 🔥 deve aparecer

@@ -1,4 +1,4 @@
-// FireeVolution 2.8 — content.js
+// FireeVolution 2.9 — content.js
 // Injeta a bolinha flutuante 🔥 e o chat de análise de vídeos em
 // YouTube, TikTok e Instagram (o manifest já restringe os sites via matches).
 

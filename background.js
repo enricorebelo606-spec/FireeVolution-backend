@@ -1,4 +1,4 @@
-// FireeVolution 2.8 — background.js
+// FireeVolution 2.9 — background.js
 // Único responsável por falar com o backend. A chave de IA NUNCA passa por aqui:
 // ela fica só no backend, lida a partir de variável de ambiente.
 

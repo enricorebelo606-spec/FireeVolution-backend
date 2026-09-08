@@ -44,8 +44,8 @@ pedir.
 
 | Key | Value |
 |---|---|
-| `OPENAI_API_KEY` | SUA_CHAVE_REAL_AQUI |
-| `FIREEVOLUTION_MODEL` | `gpt-4o` |
+| `GROQ_API_KEY` | SUA_CHAVE_REAL_AQUI |
+| `FIREEVOLUTION_MODEL` | `qwen/qwen3.6-27b` |
 | `ALLOWED_ORIGINS` | `*` |
 
 6. Clique em **Create Web Service** e aguarde o deploy (2–5 min, status vira **Live**)

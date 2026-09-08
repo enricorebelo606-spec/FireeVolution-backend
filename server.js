@@ -1,9 +1,9 @@
-// FireeVolution 2.8 — backend/server.js
+// FireeVolution 2.9 — backend/server.js
 //
 // Arquitetura:
-//   Extensão FireeVolution -> Backend (este arquivo) -> IA (OpenAI) -> Backend -> Extensão
+//   Extensão FireeVolution -> Backend (este arquivo) -> IA (Groq) -> Backend -> Extensão
 //
-// A chave de IA (OPENAI_API_KEY) SÓ existe aqui, lida de variável de
+// A chave de IA (GROQ_API_KEY) SÓ existe aqui, lida de variável de
 // ambiente. Ela nunca é enviada para a extensão nem exposta no navegador.
 
 require("dotenv").config();
@@ -35,13 +35,13 @@ app.use((err, _req, res, next) => {
   next(err);
 });
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const MODEL = process.env.FIREEVOLUTION_MODEL || "gpt-4o";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const MODEL = process.env.FIREEVOLUTION_MODEL || "qwen/qwen3.6-27b";
 const PORT = process.env.PORT || 3000;
 
-if (!OPENAI_API_KEY) {
+if (!GROQ_API_KEY) {
   console.warn(
-    "\n⚠️  OPENAI_API_KEY não encontrada. Copie backend/.env.example para backend/.env e preencha a chave.\n"
+    "\n⚠️  GROQ_API_KEY não encontrada. Copie backend/.env.example para backend/.env e preencha a chave.\n"
   );
 }
 
@@ -58,12 +58,14 @@ que você não conseguiu observar nas imagens fornecidas — nesses casos, fale
 em termos gerais e deixe claro que é uma estimativa.
 `.trim();
 
-// ---------- util: chamada à API da OpenAI ----------
+// ---------- util: chamada à API da Groq ----------
+// Endpoint compatível com o formato da OpenAI: https://api.groq.com/openai/v1/chat/completions
+// O modelo qwen/qwen3.6-27b suporta visão (imagens) e modo JSON nativo.
 
-async function callOpenAI(messages, { maxTokens = 1800, jsonMode = false } = {}) {
+async function callGroq(messages, { maxTokens = 1800, jsonMode = false } = {}) {
   const body = {
     model: MODEL,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
     messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
   };
 
@@ -71,11 +73,11 @@ async function callOpenAI(messages, { maxTokens = 1800, jsonMode = false } = {})
     body.response_format = { type: "json_object" };
   }
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify(body),
   });
@@ -123,8 +125,8 @@ app.get("/health", (_req, res) => {
 // Análise inicial de um vídeo (a partir de frames capturados no navegador)
 app.post("/analyze", async (req, res) => {
   try {
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Backend sem OPENAI_API_KEY configurada." });
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: "Backend sem GROQ_API_KEY configurada." });
     }
 
     const { site, videoMeta, frames, frameLabels } = req.body || {};
@@ -169,7 +171,7 @@ Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no s
 
     const userContent = [{ type: "text", text: instructions }, ...imageBlocks];
 
-    const rawReply = await callOpenAI([{ role: "user", content: userContent }], {
+    const rawReply = await callGroq([{ role: "user", content: userContent }], {
       maxTokens: 2000,
       jsonMode: true,
     });
@@ -199,8 +201,8 @@ Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON) no s
 // Continuação do chat, usando a análise já feita como contexto
 app.post("/chat", async (req, res) => {
   try {
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Backend sem OPENAI_API_KEY configurada." });
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: "Backend sem GROQ_API_KEY configurada." });
     }
 
     const { message, analysis, videoMeta, history } = req.body || {};
@@ -224,7 +226,7 @@ app.post("/chat", async (req, res) => {
       { role: "user", content: message },
     ];
 
-    const reply = await callOpenAI(messages, { maxTokens: 800 });
+    const reply = await callGroq(messages, { maxTokens: 800 });
 
     const newHistory = [
       ...priorHistory,
